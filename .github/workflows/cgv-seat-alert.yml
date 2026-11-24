@@ -76,6 +76,13 @@ jobs:
           src = p.read_text(encoding="utf-8")
           src = re.sub(r'"--keyword"\s*,\s*[^,\]]+\s*,\s*', '', src)
           src = src.replace('"--theaterId"', '"--theaterCode"')
+
+          old_line = 'f"잔여 {rem}/{total}\\n"'
+          new_line = (
+              'f"잔여 {rem}/{total}\\n"\n'
+              '        f"{\'⚠️ 휠체어석 가능성 높음 (1~2석)\' if int(rem or 0) <= 2 else (\'🟡 일반석 취소표 가능성 높음 (3~4석)\' if int(rem or 0) <= 4 else \'🟢 일반석 취소표 매우 높음 (5석+)\')}\\n"'
+          )
+          src = src.replace(old_line, new_line)
           p.write_text(src, encoding="utf-8")
           PY
 
