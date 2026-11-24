@@ -5,33 +5,44 @@ on:
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
+concurrency:
+  group: cgv-seat-alert
+  cancel-in-progress: false
+
 jobs:
   check-seats:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: write
     strategy:
       fail-fast: false
       matrix:
         target:
-          - movie_name: "회생"
+          - id: "hoesaeng-1"
+            movie_name: "회생"
             theater_code: "0040"
             theater_keyword: "압구정"
             theater_name: "CGV 압구정 (회생 1회차)"
             play_date: "20261126"
             start_time: "17:20"
-          - movie_name: "회생"
+          - id: "hoesaeng-2"
+            movie_name: "회생"
             theater_code: "0040"
             theater_keyword: "압구정"
             theater_name: "CGV 압구정 (회생 2회차)"
             play_date: "20261130"
             start_time: "19:50"
-          - movie_name: "그날의 태주"
+          - id: "taeju-1"
+            movie_name: "그날의 태주"
             theater_code: "0107"
             theater_keyword: "청담"
             theater_name: "CGV 청담씨네시티 (태주 1회차)"
             play_date: "20261128"
             start_time: "16:40"
-          - movie_name: "그날의 태주"
+          - id: "taeju-2"
+            movie_name: "그날의 태주"
             theater_code: "0040"
             theater_keyword: "압구정"
             theater_name: "CGV 압구정 (태주 2회차)"
@@ -42,7 +53,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
+      - name: Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -50,21 +61,47 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
 
-      - name: Prepare environment & config
+      - name: Prepare config and patch monitor.py
         run: |
-          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
-          cp config.example.json config.json
+          if [ ! -f config.json ]; then
+            cp config.example.json config.json
+          fi
+          python3 - <<'PY'
+          import re
+          from pathlib import Path
 
-      - name: Check CGV seats
+          p = Path("monitor.py")
+          src = p.read_text(encoding="utf-8")
+          src = re.sub(r'"--keyword"\s*,\s*[^,\]]+\s*,\s*', '', src)
+          src = src.replace('"--theaterId"', '"--theaterCode"')
+          p.write_text(src, encoding="utf-8")
+          PY
+
+      - name: Restore previous seat state
+        uses: actions/cache/restore@v4
+        with:
+          path: state.json
+          key: cgv-state-${{ matrix.target.id }}-${{ github.run_id }}
+          restore-keys: |
+            cgv-state-${{ matrix.target.id }}-
+
+      - name: Run one-shot CGV check
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          ALERT_SOURCE: "Actions"
           THEATER_CODE: ${{ matrix.target.theater_code }}
           THEATER_KEYWORD: ${{ matrix.target.theater_keyword }}
           THEATER_NAME: ${{ matrix.target.theater_name }}
           MOVIE_NAME: ${{ matrix.target.movie_name }}
           PLAY_DATE: ${{ matrix.target.play_date }}
           START_TIME: ${{ matrix.target.start_time }}
-        run: python -u monitor.py --once --any-seat
+          ALERT_SOURCE: Actions
+        run: python3 -u monitor.py --once --any-seat
+
+      - name: Save seat state
+        if: always() && hashFiles('state.json') != ''
+        uses: actions/cache/save@v4
+        with:
+          path: state.json
+          key: cgv-state-${{ matrix.target.id }}-${{ github.run_id }}
