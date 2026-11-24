@@ -52,6 +52,11 @@ jobs:
         with:
           python-version: "3.11"
 
+      - name: Prepare environment & config
+        run: |
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
+          cp config.example.json config.json
+
       - name: Check CGV seats
         env:
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
