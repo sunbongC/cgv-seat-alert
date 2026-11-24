@@ -2,71 +2,62 @@ name: CGV seat alert
 
 on:
   schedule:
-    # UTC. KST = UTC+9 → 매 5분
     - cron: "*/5 * * * *"
   workflow_dispatch:
 
-concurrency:
-  group: cgv-seat-alert
-  cancel-in-progress: false
-
 jobs:
-  check:
+  check-seats:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      actions: write
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - movie_name: "회생"
+            theater_code: "0040"
+            theater_keyword: "압구정"
+            theater_name: "CGV 압구정 (1회차)"
+            play_date: "20261126"
+            start_time: "17:20"
+          - movie_name: "회생"
+            theater_code: "0040"
+            theater_keyword: "압구정"
+            theater_name: "CGV 압구정 (2회차)"
+            play_date: "20261130"
+            start_time: "19:50"
+          - movie_name: "그날의 태주"
+            theater_code: "0107"
+            theater_keyword: "청담"
+            theater_name: "CGV 청담씨네시티 (1회차)"
+            play_date: "20261128"
+            start_time: "16:40"
+          - movie_name: "그날의 태주"
+            theater_code: "0040"
+            theater_keyword: "압구정"
+            theater_name: "CGV 압구정 (2회차)"
+            play_date: "20261201"
+            start_time: "14:10"
+
     steps:
-      - name: Checkout
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: "22"
-
-      - name: Setup Python
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: "3.11"
 
-      - name: Prepare config
+      - name: Install dependencies
         run: |
-          if [ ! -f config.json ]; then
-            cp config.example.json config.json
-          fi
+          python -m pip install --upgrade pip
+          if [ -f requirements.txt ]; then pip install -r requirements.txt; fi
 
-      - name: Restore previous seat state
-        id: cache-restore
-        uses: actions/cache/restore@v4
-        with:
-          path: state.json
-          key: cgv-state-${{ github.run_id }}
-          restore-keys: |
-            cgv-state-
-
-      - name: Check remaining seats once
+      - name: Check CGV seats
         env:
-          # 알림 (Secrets)
           NTFY_TOPIC: ${{ secrets.NTFY_TOPIC }}
-          NTFY_SERVER: ${{ secrets.NTFY_SERVER }}
-          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-          # 감시할 상영 — Repo Variables 권장 (Settings → Variables)
-          THEATER_CODE: ${{ vars.THEATER_CODE }}
-          THEATER_KEYWORD: ${{ vars.THEATER_KEYWORD }}
-          THEATER_NAME: ${{ vars.THEATER_NAME }}
-          MOVIE_CODE: ${{ vars.MOVIE_CODE }}
-          MOVIE_NAME: ${{ vars.MOVIE_NAME }}
-          PLAY_DATE: ${{ vars.PLAY_DATE }}
-          START_TIME: ${{ vars.START_TIME }}
-          ALERT_SOURCE: Actions
-        run: python monitor.py --once
-
-      - name: Save seat state
-        if: always() && hashFiles('state.json') != ''
-        uses: actions/cache/save@v4
-        with:
-          path: state.json
-          key: cgv-state-${{ github.run_id }}
+          THEATER_CODE: ${{ matrix.target.theater_code }}
+          THEATER_KEYWORD: ${{ matrix.target.theater_keyword }}
+          THEATER_NAME: ${{ matrix.target.theater_name }}
+          MOVIE_NAME: ${{ matrix.target.movie_name }}
+          PLAY_DATE: ${{ matrix.target.play_date }}
+          START_TIME: ${{ matrix.target.start_time }}
+        run: python main.py
